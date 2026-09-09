@@ -53,6 +53,10 @@ jobs:
           
           # دریافت آدرس IP اختصاصی
           TS_IP=$(tailscale ip -4)
+
+          sudo tailscale set --advertise-exit-node
+          
+          sudo tailscale up
           
           echo ""
           echo "==========================================================" 
