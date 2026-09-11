@@ -1,0 +1,78 @@
+name: Linux Cloud Desktop (SSH + VNC + Tailscale)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Install SSH, VNC & Desktop Environment
+        run: |
+          # به‌روزرسانی مخازن
+          sudo apt-get update
+          
+          # نصب OpenSSH، محیط دسکتاپ XFCE، سرور مجازی Xvfb و سرور VNC
+          sudo apt-get install -y openssh-server xfce4 xfce4-goodies xvfb x11vnc
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض runner
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # شروع سرویس SSH
+          sudo systemctl start ssh
+          sudo systemctl enable ssh
+          
+          # راه‌اندازی نمایشگر مجازی
+          Xvfb :99 -screen 0 1280x720x24 &
+          export DISPLAY=:99
+          
+          # اجرای محیط دسکتاپ XFCE در پس‌زمینه
+          startxfce4 &
+          
+          # تنظیم رمز عبور VNC
+          mkdir -p ~/.vnc
+          x11vnc -storepasswd "P@ssw0rd1qazXSW@#" ~/.vnc/passwd
+          
+          # شروع سرور VNC روی پورت 5900
+          nohup x11vnc -display :99 -usepw -forever -shared -rfbport 5900 >/dev/null 2>&1 &
+          
+          echo "✅ SSH and VNC (XFCE4) are successfully installed and running."
+
+      - name: 2. Install & Connect Tailscale VPN (With Exit Node)
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          # فعال‌سازی IP Forwarding برای عبور ترافیک (پیش‌نیاز Exit Node)
+          echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
+          echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
+          sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
+
+          # نصب Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+          
+          # اتصال به Tailscale و معرفی به عنوان Exit Node در یک دستور
+          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="github-linux-ssh-vnc" --advertise-exit-node --accept-routes
+          
+          # دریافت IP اختصاصی Tailscale
+          TS_IP=$(tailscale ip -4)
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 LINUX SERVER IS READY! <<<" 
+          echo "  🌐 Tailscale IP : $TS_IP" 
+          echo "  👤 Username     : runner" 
+          echo "  🔑 Password     : P@ssw0rd1qazXSW@#" 
+          echo "----------------------------------------------------------"
+          echo "  💻 SSH Command  : ssh runner@$TS_IP"
+          echo "  🖥️ VNC Address  : $TS_IP:5900"
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          # حلقه زنده نگه داشتن سیستم
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            echo "⏳ [$i/350] Server running... Keeping session alive."
+          done
