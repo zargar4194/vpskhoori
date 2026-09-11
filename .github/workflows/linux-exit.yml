@@ -1,4 +1,4 @@
-name: Linux Cloud Desktop (SSH + VNC + Tailscale)
+name: 1.Linux Cloud Desktop (SSH + VNC + Tailscale)
 
 on:
   workflow_dispatch:
